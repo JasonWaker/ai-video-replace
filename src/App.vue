@@ -3,8 +3,9 @@ import { ref, computed } from 'vue'
 import { upload } from '@vercel/blob/client'
 import { extractSkeletonVideo } from './pose.js'
 import MotionScript from './MotionScript.vue'
+import FfmpegBeat from './FfmpegBeat.vue'
 
-// 页签：stickman = 火柴人复刻（原流程） | script = 动作脚本直出（新流程）
+// 页签：stickman = 火柴人复刻（原流程） | script = 动作脚本直出 | ffmpeg = 卡点图文视频
 const tab = ref('stickman')
 
 // ====== 生成模型配置（price 为参考单价：元/秒；2.0 系列按 token 计费，按 720p 实测 108900 tok/5s 换算） ======
@@ -371,6 +372,11 @@ function restart() {
           :class="tab === 'script' ? 'bg-cyan-600 text-white' : 'text-gray-400 hover:text-gray-200'">
           📝 动作脚本直出
         </button>
+        <button @click="tab = 'ffmpeg'"
+          class="px-4 py-1.5 text-xs rounded-md transition"
+          :class="tab === 'ffmpeg' ? 'bg-orange-600 text-white' : 'text-gray-400 hover:text-gray-200'">
+          ⚡ FFmpeg 卡点图文
+        </button>
       </div>
     </header>
 
@@ -577,8 +583,13 @@ function restart() {
     </main>
 
     <!-- 动作脚本直出页签 -->
-    <main v-else class="max-w-4xl mx-auto px-6 py-8">
+    <main v-else-if="tab === 'script'" class="max-w-4xl mx-auto px-6 py-8">
       <MotionScript />
+    </main>
+
+    <!-- FFmpeg 卡点图文页签 -->
+    <main v-else class="max-w-4xl mx-auto px-6 py-8">
+      <FfmpegBeat />
     </main>
 
     <!-- 人物图放大查看（已下线人物图功能，保留结构占位） -->
