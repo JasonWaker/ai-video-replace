@@ -582,17 +582,47 @@ function restart() {
       </div>
 
       <!-- ===== 步骤 3：结果 ===== -->
-      <div v-if="step === 3" class="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-3">
-        <div class="flex items-center gap-2">
-          <span class="w-6 h-6 rounded-full bg-green-600 text-white text-xs flex items-center justify-center font-bold">4</span>
-          <span class="font-medium">生成结果</span>
-        </div>
-        <video :src="videoUrl" controls autoplay class="w-full rounded-lg"></video>
-        <div class="flex flex-wrap items-center gap-3">
-          <a :href="downloadHref" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition">⬇ 下载视频</a>
-          <a :href="videoUrl" target="_blank" rel="noopener" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm transition">打开原链接</a>
-          <button @click="restart" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm transition">🔄 换下一个</button>
-          <span class="text-xs text-gray-500">保留原 BGM：下载后用剪映将原音轨贴回即可</span>
+      <div v-if="step === 3" class="space-y-3">
+        <!-- 折叠区：本次生成的解析结果 + 完整 prompt -->
+        <details class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+          <summary class="text-xs text-gray-400 cursor-pointer hover:text-gray-200">
+            📋 查看本次生成的解析结果和提示词（回溯用）
+          </summary>
+          <div class="mt-3 grid sm:grid-cols-2 gap-3 text-sm">
+            <div class="bg-gray-800/60 rounded-lg p-3">
+              <div class="text-xs text-indigo-400 mb-1">👤 人物</div>
+              <div class="text-gray-300 text-xs leading-relaxed">{{ analysis?.person || personDesc || '—' }}</div>
+            </div>
+            <div class="bg-gray-800/60 rounded-lg p-3">
+              <div class="text-xs text-indigo-400 mb-1">🌆 场景</div>
+              <div class="text-gray-300 text-xs leading-relaxed">{{ analysis?.scene || sceneInput || '—' }}</div>
+            </div>
+            <div class="bg-gray-800/60 rounded-lg p-3">
+              <div class="text-xs text-indigo-400 mb-1">💃 动作节奏</div>
+              <div class="text-gray-300 text-xs leading-relaxed">{{ analysis?.motion || '—' }}</div>
+            </div>
+            <div class="bg-gray-800/60 rounded-lg p-3">
+              <div class="text-xs text-indigo-400 mb-1">🎥 镜头</div>
+              <div class="text-gray-300 text-xs leading-relaxed">{{ analysis?.camera || '—' }}</div>
+            </div>
+          </div>
+          <div v-if="stickman" class="mt-3 text-xs text-gray-500">
+            🕺 火柴人动作参考已随请求发送（动作节奏 100% 来自原视频）
+          </div>
+        </details>
+
+        <div class="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-3">
+          <div class="flex items-center gap-2">
+            <span class="w-6 h-6 rounded-full bg-green-600 text-white text-xs flex items-center justify-center font-bold">4</span>
+            <span class="font-medium">生成结果</span>
+          </div>
+          <video :src="videoUrl" controls autoplay class="w-full rounded-lg"></video>
+          <div class="flex flex-wrap items-center gap-3">
+            <a :href="downloadHref" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition">⬇ 下载视频</a>
+            <a :href="videoUrl" target="_blank" rel="noopener" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm transition">打开原链接</a>
+            <button @click="restart" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm transition">🔄 换下一个</button>
+            <span class="text-xs text-gray-500">保留原 BGM：下载后用剪映将原音轨贴回即可</span>
+          </div>
         </div>
       </div>
       </template>
