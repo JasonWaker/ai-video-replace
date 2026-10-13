@@ -207,17 +207,27 @@ async function startAnalyze() {
     if (!frames.value.length) frames.value = await extractFrames(v)
     audioInfo.value = await analyzeAudioBpm(videoFile.value)
 
-    // 火柴人提取（占用 video 元素）与视觉分析（纯网络请求）并行
-    const posePromise = runPoseExtraction(v)
+    // 只跑视觉分析，火柴人提取放到 step 2 手动触发
     const data = await postJSON('/api/analyze', { frames: frames.value })
     analysis.value = data.analysis
     sceneInput.value = data.analysis.scene || ''
     motionInput.value = data.analysis.motion || ''
-    personDesc.value = '' // 人物形象默认留空，由模型自行设计
+    personDesc.value = ''
     step.value = 2
-    await posePromise // 等动作参考就绪（进度条可见）
   } catch (e) {
     errorMsg.value = e.message
+  } finally {
+    busy.value = ''
+  }
+}
+
+// 手动提取火柴人（step 2 用户点按钮触发）
+async function extractStickman() {
+  if (poseState.value === 'running') return
+  busy.value = 'pose'
+  try {
+    const v = document.getElementById('refVideo')
+    await runPoseExtraction(v)
   } finally {
     busy.value = ''
   }
@@ -422,21 +432,21 @@ function restart() {
 
       <!-- ===== 火柴人复刻 ===== -->
       <template v-if="tab === 'stickman'">
-      <!-- 步骤 1：自动分析（上传完自动跑，不再需要手动点） -->
+      <!-- 步骤 1：解析视频 -->
       <div v-if="step === 1" class="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-3">
         <div class="flex items-center gap-2">
           <span class="w-6 h-6 rounded-full bg-indigo-600 text-white text-xs flex items-center justify-center font-bold">1</span>
-          <span class="font-medium">视频分析 + 火柴人提取</span>
+          <span class="font-medium">解析视频要素</span>
         </div>
         <div v-if="busy === 'analyzing'" class="text-sm text-indigo-300 py-4 text-center">
-          🔍 正在分析要素 + 提取动作骨架…（约30-90秒）
+          🔍 正在解析人物/场景/动作/镜头…（约10-20秒）
         </div>
         <div v-else-if="!videoFile" class="text-sm text-gray-500 py-4 text-center">
           请先在上方公共区上传参考视频
         </div>
         <button v-else @click="startAnalyze" :disabled="!!busy"
           class="w-full py-3 bg-gradient-to-r from-indigo-600 to-purple-600 disabled:opacity-40 rounded-lg font-medium text-white">
-          🔍 开始分析 + 提取火柴人
+          🔍 解析视频要素
         </button>
       </div>
 
@@ -485,6 +495,7 @@ function restart() {
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2 text-sm font-medium">
               <span>🕺</span> 动作参考（火柴人）
+              <span class="text-xs text-gray-500 font-normal">可选，提升动作精度</span>
             </div>
             <span class="text-xs" :class="{
               'text-indigo-400': poseState === 'running',
@@ -494,13 +505,20 @@ function restart() {
               {{ poseState === 'running' ? `提取中 ${poseProgress.done}/${poseProgress.total} 帧` : poseState === 'done' ? '✓ 动作已锁定，生成时随请求发送' : poseState === 'error' ? '提取失败，将用纯文字生成' : '' }}
             </span>
           </div>
+
+          <!-- idle 状态：显示提取按钮 -->
+          <button v-if="poseState === 'idle'" @click="extractStickman" :disabled="busy === 'pose'"
+            class="w-full py-2.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 rounded-lg text-xs text-gray-300">
+            🦴 提取火柴人骨架（提升动作精度，约30-60秒）
+          </button>
+
           <div v-if="poseState === 'running'" class="h-1.5 bg-gray-800 rounded-full overflow-hidden">
             <div class="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all"
               :style="{ width: poseProgress.total ? (poseProgress.done / poseProgress.total * 100).toFixed(1) + '%' : '5%' }"></div>
           </div>
           <video v-if="poseState === 'done' && stickman" :src="stickman.url" autoplay loop muted playsinline
             class="max-h-56 rounded-lg border border-gray-800 bg-black mx-auto block"></video>
-          <p class="text-[11px] text-gray-600">从你的视频逐帧提取人体骨架渲染成火柴人演示（黑底白骨架），作为动作参考发给生成模型——动作节奏 100% 来自原视频，且不含真人画面。</p>
+          <p class="text-[11px] text-gray-600">从你的视频逐帧提取人体骨架渲染成火柴人演示（黑底白骨架），作为动作参考发给生成模型——动作节奏 100% 来自原视频，且不含真人画面。不提取也能生成，只是动作精度会低一些。</p>
         </div>
 
         <!-- 提示词微调 -->
