@@ -195,16 +195,29 @@ async function generate() {
   errorMsg.value = ''
   try {
     const bpmTxt = audioInfo.value?.bpm ? `，节奏约 ${audioInfo.value.bpm} BPM` : ''
+    // 把 timeline 转成"[X.Xs] 动作"分镜表，这是模型最容易执行的格式
+    const shotList = (motion.value.timeline || []).map(kf => {
+      const parts = []
+      if (kf.head) parts.push(kf.head)
+      if (kf.arm) parts.push(kf.arm)
+      if (kf.waist) parts.push(kf.waist)
+      if (kf.hip) parts.push(kf.hip)
+      if (kf.eye) parts.push(kf.eye)
+      if (kf.expression) parts.push(kf.expression)
+      return `[${kf.t?.toFixed?.(1) ?? kf.t}s] ${parts.join('，')}`
+    }).join('\n')
+
     const text = [
       `生成一段 ${duration.value} 秒的写实风格短视频，固定机位中全景，镜头稳定无运镜，灯光与背景全程保持一致。${bpmTxt}。`,
       refImageUrl.value ? '人物形象以参考图为准（严格保持同一人）。' : (personDesc.value.trim()
         ? `人物：${personDesc.value.trim()}，人物形象全程保持一致。`
         : '人物：由你创作的一位全新时尚人物，形象全程保持一致。'),
       `场景：${sceneInput.value.trim() || motion.value.scene || '光线均匀的场景'}。`,
-      `动作脚本（严格按此时间轴执行）：${motion.value.narrative}`,
+      `【严格按以下分镜表执行，每个时间点的动作必须精确对应，不要自由发挥、不要跳过任何一个动作点】：\n${shotList}`,
+      motion.value.narrative ? `动作补充说明：${motion.value.narrative}` : '',
       motion.value.camera ? `镜头参考：${motion.value.camera}` : '',
-      '禁止出现任何文字、水印、Logo；禁止真人肖像。',
-    ].filter(Boolean).join(' ')
+      '动作之间流畅过渡，卡点干脆。禁止出现任何文字、水印、Logo；禁止真人肖像。',
+    ].filter(Boolean).join('\n\n')
 
     const content = [{ type: 'text', text }]
     if (refImageUrl.value) {
@@ -280,7 +293,7 @@ function resetAll() {
 <template>
   <div class="space-y-6">
     <div class="bg-gradient-to-r from-cyan-950/40 to-blue-950/30 border border-cyan-800/50 rounded-xl p-4 text-xs text-cyan-200/80 leading-relaxed">
-      💡 <b>动作脚本直出</b>：把原视频交给视觉模型拆解成"按秒动作时间轴"，再把这份纯文字脚本喂给 Seedance 图生视频。<b>全程不把原视频/真人画面发给生成模型</b>，过审率远高于直接喂参考视频；动作是"神似"而非逐帧复刻。
+      💡 <b>动作脚本直出</b>：把原视频交给视觉模型拆解成"按秒动作时间轴"，再把这份纯文字脚本喂给 Seedance 图生视频。<b>全程不把原视频/真人画面发给生成模型</b>，过审率远高于直接喂参考视频。动作精度约 70–80%（神似），要 100% 复刻请用"火柴人复刻"页签。
     </div>
 
     <div v-if="errorMsg" class="bg-red-950/50 border border-red-800 rounded-xl p-4 text-sm text-red-300 whitespace-pre-line">
