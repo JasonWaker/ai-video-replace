@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import PromptPicker from './PromptPicker.vue'
+import { DANCE_TEMPLATES } from './dance-templates.js'
 
 // 接收 App.vue 共享的视频（切 tab 不丢）
 const props = defineProps({
@@ -24,16 +25,7 @@ const step = ref(1)
 const busy = ref('')
 const errorMsg = ref('')
 
-// 热门舞蹈模板（Seedance 训练数据里有大量这类视频，直接写舞蹈名就能生成）
-const DANCE_TEMPLATES = [
-  { name: '巴提巴提舞', desc: '双手在胸前比心摆动，胯部左右轻摆，卡点清晰' },
-  { name: '科目三', desc: '双手甩动，脚步左右横移，胯部随节奏摆动' },
-  { name: '擦玻璃舞', desc: '双手在身前做擦玻璃动作，身体左右摇摆' },
-  { name: '摆摆舞', desc: '双手随节拍上下摆动，头部轻晃，节奏明快' },
-  { name: '手势舞', desc: '手指在脸前比心、指镜头，头部配合微笑' },
-  { name: '摇花手', desc: '双手在胸前快速转圈，身体随节奏律动' },
-  { name: 'solo 卡点舞', desc: '随鼓点摆 pose：转身、回头、撩发、叉腰，每拍一个 pose' },
-]
+// 热门舞蹈模板库（在 dance-templates.js 里加，直接加一行就行）
 const selectedDance = ref('')
 const personTpl = ref('')
 const sceneTpl = ref('')
@@ -174,6 +166,8 @@ async function startAnalyze() {
     motion.value = data.analysis
     sceneInput.value = data.analysis.scene || ''
     step.value = 2
+    // 自动先生成人物效果图（用户看到满意再生成视频）
+    setTimeout(generateRefImage, 300)
   } catch (e) {
     errorMsg.value = e.message
   } finally {
