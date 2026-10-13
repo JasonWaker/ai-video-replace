@@ -123,10 +123,6 @@ function onVideoMeta() {
   videoW.value = v.videoWidth || 0
   videoH.value = v.videoHeight || 0
   duration.value = maxDuration.value
-  // 自动开始分析（火柴人页签）
-  if (tab.value === 'stickman' && step.value === 1 && videoFile.value) {
-    setTimeout(startAnalyze, 300)
-  }
 }
 
 function clearVideo() {
@@ -431,12 +427,17 @@ function restart() {
         <div class="flex items-center gap-2">
           <span class="w-6 h-6 rounded-full bg-indigo-600 text-white text-xs flex items-center justify-center font-bold">1</span>
           <span class="font-medium">视频分析 + 火柴人提取</span>
-          <span class="text-xs text-gray-500">上传后自动开始</span>
         </div>
         <div v-if="busy === 'analyzing'" class="text-sm text-indigo-300 py-4 text-center">
           🔍 正在分析要素 + 提取动作骨架…（约30-90秒）
         </div>
-        <div v-else-if="!videoFile" class="text-sm text-gray-500 py-4 text-center">请先上传参考视频</div>
+        <div v-else-if="!videoFile" class="text-sm text-gray-500 py-4 text-center">
+          请先在上方公共区上传参考视频
+        </div>
+        <button v-else @click="startAnalyze" :disabled="!!busy"
+          class="w-full py-3 bg-gradient-to-r from-indigo-600 to-purple-600 disabled:opacity-40 rounded-lg font-medium text-white">
+          🔍 开始分析 + 提取火柴人
+        </button>
       </div>
 
       <!-- ===== 步骤 2：分析结果 + 提示词微调 ===== -->

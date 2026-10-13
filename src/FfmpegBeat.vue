@@ -43,7 +43,7 @@ watch(() => props.videoFile, async (file) => {
   if (file && step.value === 1) {
     await detectBeats(file)
   }
-})
+}, { immediate: true })
 
 // ====== 工具 ======
 async function postJSON(path, body) {

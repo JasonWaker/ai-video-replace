@@ -190,7 +190,7 @@ watch(() => props.videoFile, (file) => {
   if (file && mode.value === 'analyze' && step.value === 1) {
     setTimeout(startAnalyze, 500)
   }
-})
+}, { immediate: true })
 
 async function startAnalyze() {
   if (!props.videoFile || busy.value) return
