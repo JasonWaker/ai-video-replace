@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^1.1.0",
+    "@vercel/blob": "^1.0.0",
     "vue": "^3.4.0"
   },
   "devDependencies": {
