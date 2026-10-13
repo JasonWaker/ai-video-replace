@@ -78,9 +78,11 @@ const frames = ref([])
 
 // 动作脚本
 const motion = ref(null) // { scene, camera, timeline: [], narrative }
+const analyzedVideoKey = ref('') // 已解析过的视频 key，避免重复解析
 
 // 人物设定
 const personDesc = ref('')
+const cameraInput = ref('') // 镜头单独设定
 const refImageUrl = ref('')      // Seedream 生成的参考图 URL
 const refImageLoading = ref(false)
 const sceneInput = ref('')
@@ -185,11 +187,13 @@ async function analyzeAudioBpm(file) {
 }
 
 // ====== 事件 ======
-// watch 共享视频，有视频自动开始拆解动作（切 tab 回来也不丢）
+// watch 共享视频，有视频自动开始拆解动作（已解析过的视频不重跑）
 watch(() => props.videoFile, (file) => {
-  if (file && mode.value === 'analyze' && step.value === 1) {
-    setTimeout(startAnalyze, 500)
-  }
+  if (!file || mode.value !== 'analyze' || step.value !== 1) return
+  // 同一个视频不重复解析
+  const key = `${file.name}-${file.size}`
+  if (analyzedVideoKey.value === key && motion.value) return
+  setTimeout(startAnalyze, 500)
 }, { immediate: true })
 
 async function startAnalyze() {
@@ -197,7 +201,6 @@ async function startAnalyze() {
   busy.value = 'analyzing'
   errorMsg.value = ''
   try {
-    // 从 App.vue 公共视频元素抽帧
     const v = document.getElementById('refVideo')
     if (v && !frames.value.length) frames.value = await extractFrames(v, 8)
     const data = await postJSON('/api/analyze-motion', {
@@ -206,6 +209,8 @@ async function startAnalyze() {
     })
     motion.value = data.analysis
     sceneInput.value = data.analysis.scene || ''
+    cameraInput.value = data.analysis.camera || ''
+    analyzedVideoKey.value = `${props.videoFile.name}-${props.videoFile.size}`
     step.value = 2
     // 自动先生成人物效果图（用户看到满意再生成视频）
     setTimeout(generateRefImage, 300)
@@ -231,6 +236,37 @@ async function generateRefImage() {
   } finally {
     refImageLoading.value = false
   }
+}
+
+// 完整生成 prompt 预览（用于回溯）
+const previewPrompt = computed(() => {
+  if (!motion.value) return ''
+  const shotList = motion.value.timeline.map(kf => {
+    const parts = []
+    if (kf.head) parts.push(kf.head)
+    if (kf.arm) parts.push(kf.arm)
+    if (kf.waist) parts.push(kf.waist)
+    if (kf.hip) parts.push(kf.hip)
+    if (kf.eye) parts.push(kf.eye)
+    if (kf.expression) parts.push(kf.expression)
+    return `[${kf.t?.toFixed?.(1) ?? kf.t}s] ${parts.join('，')}`
+  }).join('\n')
+  return [
+    `生成一段 ${duration.value} 秒的写实风格短视频，固定机位中全景，镜头稳定无运镜，灯光与背景全程保持一致。`,
+    refImageUrl.value ? '人物形象以参考图为准（严格保持同一人）。' : (personDesc.value.trim()
+      ? `人物：${personDesc.value.trim()}，人物形象全程保持一致。`
+      : '人物：由你创作的一位全新时尚人物，形象全程保持一致。'),
+    `场景：${sceneInput.value.trim() || motion.value.scene || '光线均匀的场景'}。`,
+    cameraInput.value.trim() ? `镜头设定：${cameraInput.value.trim()}` : (motion.value.camera ? `镜头参考：${motion.value.camera}` : ''),
+    `【严格按以下分镜表执行】：\n${shotList}`,
+    motion.value.narrative ? `动作补充：${motion.value.narrative}` : '',
+    '禁止文字/水印/Logo；禁止真人肖像。',
+  ].filter(Boolean).join('\n\n')
+})
+
+function copyPrompt() {
+  navigator.clipboard.writeText(previewPrompt.value)
+  alert('已复制到剪贴板')
 }
 
 async function generate() {
@@ -261,7 +297,7 @@ async function generate() {
       `场景：${sceneInput.value.trim() || motion.value.scene || '光线均匀的场景'}。`,
       `【严格按以下分镜表执行，每个时间点的动作必须精确对应，不要自由发挥、不要跳过任何一个动作点】：\n${shotList}`,
       motion.value.narrative ? `动作补充说明：${motion.value.narrative}` : '',
-      motion.value.camera ? `镜头参考：${motion.value.camera}` : '',
+      cameraInput.value.trim() ? `镜头设定：${cameraInput.value.trim()}` : (motion.value.camera ? `镜头参考：${motion.value.camera}` : ''),
       '动作之间流畅过渡，卡点干脆。禁止出现任何文字、水印、Logo；禁止真人肖像。',
     ].filter(Boolean).join('\n\n')
 
@@ -611,6 +647,13 @@ function resetAll() {
           <input v-model="sceneInput" class="w-full mt-1 bg-gray-800 rounded-lg px-4 py-2 text-sm border border-gray-700 focus:border-cyan-500 focus:outline-none"/>
         </div>
 
+        <div>
+          <label class="text-xs text-gray-500 flex items-center gap-2">镜头（覆盖原片镜头）
+            <PromptPicker v-model="cameraInput" />
+          </label>
+          <input v-model="cameraInput" placeholder="例：固定机位中全景，镜头稳定无运镜" class="w-full mt-1 bg-gray-800 rounded-lg px-4 py-2 text-sm border border-gray-700 focus:border-cyan-500 focus:outline-none"/>
+        </div>
+
         <div class="flex gap-3 items-center">
           <button @click="generateRefImage" :disabled="refImageLoading"
             class="px-4 py-2 bg-blue-700 hover:bg-blue-600 disabled:opacity-40 text-white rounded-lg text-xs">
@@ -643,6 +686,17 @@ function resetAll() {
             </select>
           </div>
         </div>
+
+        <!-- 完整 prompt 预览（可复制回溯） -->
+        <details class="bg-gray-800/60 rounded-lg p-3">
+          <summary class="text-xs text-gray-400 cursor-pointer hover:text-gray-200">
+            📋 查看完整生成提示词（用于回溯/复制）
+          </summary>
+          <pre class="mt-2 text-xs text-gray-300 whitespace-pre-wrap bg-gray-900 p-3 rounded max-h-64 overflow-y-auto">{{ previewPrompt }}</pre>
+          <button @click="copyPrompt" class="mt-2 px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs text-white">
+            📋 复制
+          </button>
+        </details>
 
         <button @click="generate" :disabled="!canGenerate"
           class="w-full py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-40 rounded-lg font-medium text-white transition">
