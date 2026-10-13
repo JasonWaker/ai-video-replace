@@ -136,13 +136,25 @@ async function generateImages() {
       beats.value[beats.value.length - 1] = videoDuration.value - 0.3
     }
 
-    // 2) 批量调 Seedream
+    // 2) 批量调 Seedream：第1张正常生成定妆图，后续以第1张为参考保持一致
     const baseScene = scenePrompt.value.trim() || '高端度假酒店泳池边傍晚，暖金色夕阳'
+    let refImageUrl = '' // 第1张图的原始 URL，作为后续图生图参考
     for (let i = 0; i < shotCount.value; i++) {
       const pose = POSES[i % POSES.length]
-      const prompt = `写实人像摄影，9:16竖屏，中全景，${personPrompt.value.trim()}，${baseScene}，${pose}，皮肤通透，高清细腻，电影感光线，无文字无水印`
+      let prompt
+      if (i === 0) {
+        prompt = `写实人像摄影，9:16竖屏，中全景，${personPrompt.value.trim()}，${baseScene}，${pose}，皮肤通透，高清细腻，电影感光线，无文字无水印`
+      } else {
+        // 图生图：强制保持人物、服装、场景一致，只改姿势
+        prompt = `保持参考图中的人物长相、发型、服装款式颜色、场景、光线完全一致，只改变人物姿势为：${pose}。写实摄影，9:16竖屏，中全景，高清细腻，无文字无水印`
+      }
       try {
-        const data = await postJSON('/api/seedream', { prompt, size: '1080x1920' })
+        const data = await postJSON('/api/seedream', {
+          prompt,
+          size: '1080x1920',
+          ...(refImageUrl ? { image: refImageUrl } : {}),
+        })
+        if (i === 0) refImageUrl = data.image_url
         // 走代理拿 blob（避免 CORS 污染 canvas）
         const imgResp = await fetch(`/api/download?url=${encodeURIComponent(data.image_url)}&filename=shot${i}.jpg`)
         const blob = await imgResp.blob()

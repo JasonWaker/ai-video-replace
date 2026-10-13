@@ -16,12 +16,21 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: '服务端未配置 ARK_API_KEY 环境变量' })
   }
 
-  const { prompt, size = '1080x1920' } = req.body || {}
+  const { prompt, size = '1080x1920', image } = req.body || {}
   if (!prompt || typeof prompt !== 'string') {
     return res.status(400).json({ error: '缺少 prompt 参数' })
   }
 
   const safePrompt = sanitizePrompt(prompt)
+  const body = {
+    model: SEEDREAM_MODEL,
+    prompt: safePrompt,
+    size,
+    response_format: 'url',
+    watermark: false,
+  }
+  // 图生图：传入参考图 URL 或 base64，保持人物/服装/场景一致
+  if (image) body.image = image
 
   try {
     const upstream = fetch(`${ARK_BASE}/images/generations`, {
@@ -30,13 +39,7 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model: SEEDREAM_MODEL,
-        prompt: safePrompt,
-        size,
-        response_format: 'url',
-        watermark: false,
-      }),
+      body: JSON.stringify(body),
     })
     // 超时 60s
     const timer = new Promise((_, rej) => setTimeout(() => rej(new Error('生成超时(60s)')), 60000))
