@@ -97,7 +97,7 @@ const pollLog = ref([])
 const videoUrl = ref('')
 
 const currentModel = computed(() => GEN_MODELS.find(m => m.id === genModel.value) || GEN_MODELS[0])
-const maxDuration = computed(() => Math.max(3, Math.min(10, Math.round(videoDuration.value) || 5)))
+const maxDuration = computed(() => Math.max(3, Math.min(10, Math.round(props.videoDuration) || 5)))
 const canGenerate = computed(() => !!motion.value && !!motion.value.narrative && !busy.value)
 const downloadHref = computed(() => {
   if (!videoUrl.value) return ''
@@ -276,7 +276,7 @@ async function generate() {
   videoUrl.value = ''
   errorMsg.value = ''
   try {
-    const bpmTxt = audioInfo.value?.bpm ? `，节奏约 ${audioInfo.value.bpm} BPM` : ''
+    const bpmTxt = props.audioInfo?.bpm ? `，节奏约 ${props.audioInfo.bpm} BPM` : ''
     // 把 timeline 转成"[X.Xs] 动作"分镜表，这是模型最容易执行的格式
     const shotList = (motion.value.timeline || []).map(kf => {
       const parts = []
@@ -310,7 +310,7 @@ async function generate() {
       model: genModel.value,
       content,
       duration: duration.value,
-      ratio: videoH.value > videoW.value ? '9:16' : '16:9',
+      ratio: props.videoH > props.videoW ? '9:16' : '16:9',
       generate_audio: true,
       watermark: false,
     })
