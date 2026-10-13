@@ -4,6 +4,7 @@ import { upload } from '@vercel/blob/client'
 import { extractSkeletonVideo } from './pose.js'
 import MotionScript from './MotionScript.vue'
 import FfmpegBeat from './FfmpegBeat.vue'
+import PromptPicker from './PromptPicker.vue'
 
 // 页签：stickman = 火柴人复刻（原流程） | script = 动作脚本直出 | ffmpeg = 卡点图文视频
 const tab = ref('stickman')
@@ -503,7 +504,9 @@ function restart() {
 
           <!-- 人物形象描述 -->
           <div>
-            <label class="text-xs text-gray-500">人物形象描述（可选，留空 = 模型自行设计全新人物）</label>
+            <label class="text-xs text-gray-500 flex items-center gap-2">人物形象描述（可选，留空 = 模型自行设计全新人物）
+              <PromptPicker v-model="personDesc" />
+            </label>
             <textarea v-model="personDesc" rows="2" placeholder="例：金发年轻女性，穿白色运动套装；或：二次元动漫风少女，粉色双马尾"
               class="w-full mt-1 bg-gray-800 rounded-lg px-4 py-2 text-sm border border-gray-700 focus:border-indigo-500 focus:outline-none resize-none placeholder:text-gray-600"></textarea>
             <p class="text-[11px] text-gray-600 mt-1">提示词仅用于文字生成：视频只做分析参考不参与生成，动作按上面的文字描述重现，无需上传图片。</p>
@@ -511,14 +514,18 @@ function restart() {
 
           <!-- 场景替换 -->
           <div>
-            <label class="text-xs text-gray-500">场景（可修改）</label>
+            <label class="text-xs text-gray-500 flex items-center gap-2">场景（可修改）
+              <PromptPicker v-model="sceneInput" />
+            </label>
             <textarea v-model="sceneInput" rows="2"
               class="w-full mt-1 bg-gray-800 rounded-lg px-4 py-2 text-sm border border-gray-700 focus:border-indigo-500 focus:outline-none resize-none"></textarea>
           </div>
 
           <!-- 动作微调 -->
           <div>
-            <label class="text-xs text-gray-500">动作要求（可修改，动作主体保留自原视频）</label>
+            <label class="text-xs text-gray-500 flex items-center gap-2">动作要求（可修改，动作主体保留自原视频）
+              <PromptPicker v-model="motionInput" />
+            </label>
             <textarea v-model="motionInput" rows="2"
               class="w-full mt-1 bg-gray-800 rounded-lg px-4 py-2 text-sm border border-gray-700 focus:border-indigo-500 focus:outline-none resize-none"></textarea>
           </div>

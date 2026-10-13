@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue'
+import PromptPicker from './PromptPicker.vue'
 
 // ====== 状态 ======
 const step = ref(1) // 1 上传+参数 | 2 生图+合成 | 3 结果
@@ -325,12 +326,16 @@ function resetAll() {
 
       <div class="grid sm:grid-cols-2 gap-3 pt-2">
         <div>
-          <label class="text-xs text-gray-500">人物形象描述</label>
+          <label class="text-xs text-gray-500 flex items-center gap-2">人物形象描述
+            <PromptPicker v-model="personPrompt" />
+          </label>
           <textarea v-model="personPrompt" rows="2" placeholder="例：两位年轻东亚女性，齐肩短发和长卷发，穿香槟色亮片裙"
             class="w-full mt-1 bg-gray-800 rounded-lg px-3 py-2 text-sm border border-gray-700 focus:border-orange-500 focus:outline-none resize-none"></textarea>
         </div>
         <div>
-          <label class="text-xs text-gray-500">场景（每张图共用）</label>
+          <label class="text-xs text-gray-500 flex items-center gap-2">场景（每张图共用）
+            <PromptPicker v-model="scenePrompt" />
+          </label>
           <textarea v-model="scenePrompt" rows="2" placeholder="高端度假酒店无边泳池傍晚，暖金色夕阳"
             class="w-full mt-1 bg-gray-800 rounded-lg px-3 py-2 text-sm border border-gray-700 focus:border-orange-500 focus:outline-none resize-none"></textarea>
         </div>

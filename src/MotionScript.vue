@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue'
+import PromptPicker from './PromptPicker.vue'
 
 // ====== 模型配置（与 App.vue 保持一致） ======
 const GEN_MODELS = [
@@ -367,13 +368,18 @@ function resetAll() {
         </div>
 
         <div>
-          <label class="text-xs text-gray-500">人物形象描述（留空 = 模型自设计；建议写"两位年轻东亚女性，香槟色长裙，泳池边"这类中性词）</label>
+          <label class="text-xs text-gray-500 flex items-center gap-2">
+            人物形象描述（留空 = 模型自设计；建议写"两位年轻东亚女性，香槟色长裙，泳池边"这类中性词）
+            <PromptPicker v-model="personDesc" />
+          </label></label>
           <textarea v-model="personDesc" rows="2" placeholder="例：两位年轻东亚女性，一位齐肩短发穿香槟色短裙，一位长卷发穿香槟色长裙"
             class="w-full mt-1 bg-gray-800 rounded-lg px-4 py-2 text-sm border border-gray-700 focus:border-cyan-500 focus:outline-none resize-none"></textarea>
         </div>
 
         <div>
-          <label class="text-xs text-gray-500">场景（覆盖原片场景）</label>
+          <label class="text-xs text-gray-500 flex items-center gap-2">场景（覆盖原片场景）
+            <PromptPicker v-model="sceneInput" />
+          </label>
           <input v-model="sceneInput" class="w-full mt-1 bg-gray-800 rounded-lg px-4 py-2 text-sm border border-gray-700 focus:border-cyan-500 focus:outline-none"/>
         </div>
 
