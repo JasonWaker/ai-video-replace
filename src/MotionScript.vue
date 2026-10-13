@@ -10,9 +10,26 @@ const GEN_MODELS = [
 ]
 
 // ====== 状态 ======
+const mode = ref('analyze') // analyze = 上传视频拆动作 | template = 热门舞蹈直出
 const step = ref(1)
 const busy = ref('')
 const errorMsg = ref('')
+
+// 热门舞蹈模板（Seedance 训练数据里有大量这类视频，直接写舞蹈名就能生成）
+const DANCE_TEMPLATES = [
+  { name: '巴提巴提舞', desc: '双手在胸前比心摆动，胯部左右轻摆，卡点清晰' },
+  { name: '科目三', desc: '双手甩动，脚步左右横移，胯部随节奏摆动' },
+  { name: '擦玻璃舞', desc: '双手在身前做擦玻璃动作，身体左右摇摆' },
+  { name: '摆摆舞', desc: '双手随节拍上下摆动，头部轻晃，节奏明快' },
+  { name: '手势舞', desc: '手指在脸前比心、指镜头，头部配合微笑' },
+  { name: '摇花手', desc: '双手在胸前快速转圈，身体随节奏律动' },
+  { name: 'solo 卡点舞', desc: '随鼓点摆 pose：转身、回头、撩发、叉腰，每拍一个 pose' },
+]
+const selectedDance = ref('')
+const personTpl = ref('')
+const sceneTpl = ref('')
+const durationTpl = ref(5)
+const genModelTpl = ref('doubao-seedance-2-0-mini-260615') // 模板模式默认最省钱
 
 // 视频
 const videoFile = ref(null)
@@ -276,6 +293,80 @@ async function generate() {
   }
 }
 
+// ====== 热门舞蹈模板直出（纯文生视频，最便宜） ======
+async function generateTemplate() {
+  if (!selectedDance.value) {
+    errorMsg.value = '请先选一个舞蹈模板'
+    return
+  }
+  busy.value = 'generating'
+  taskId.value = ''
+  pollLog.value = []
+  videoUrl.value = ''
+  errorMsg.value = ''
+  try {
+    const dance = DANCE_TEMPLATES.find(d => d.name === selectedDance.value)
+    const text = [
+      `生成一段 ${durationTpl.value} 秒的写实风格短视频，竖屏 9:16，固定机位中全景，镜头稳定，灯光与背景全程一致。`,
+      personTpl.value.trim()
+        ? `人物：${personTpl.value.trim()}，人物形象全程保持一致。`
+        : '人物：一位时尚年轻女性，形象全程保持一致。',
+      `场景：${sceneTpl.value.trim() || '光线均匀的室内场景'}。`,
+      `动作：跳【${selectedDance.value}】，具体动作要点：${dance?.desc || selectedDance.value}，随音乐鼓点卡点，动作干脆有力。`,
+      '禁止出现任何文字、水印、Logo；禁止真人肖像。',
+    ].filter(Boolean).join('\n')
+
+    pollLog.value.push(`开始生成：${selectedDance.value}（模型：${genModelTpl.value.includes('mini') ? 'mini 最省' : genModelTpl.value.includes('fast') ? 'fast' : '2.5'}）`)
+    const d = await postJSON('/api/generate', {
+      model: genModelTpl.value,
+      content: [{ type: 'text', text }],
+      duration: durationTpl.value,
+      ratio: '9:16',
+      generate_audio: true,
+      watermark: false,
+    })
+    taskId.value = d.task_id
+    pollLog.value.push(`✓ 任务已创建：${taskId.value}`)
+
+    const start = Date.now()
+    while (true) {
+      const elapsed = Math.floor((Date.now() - start) / 1000)
+      if (elapsed > 600) throw new Error('超时（10分钟未完成）')
+      let data
+      try {
+        const resp = await fetch(`/api/task?task_id=${encodeURIComponent(taskId.value)}`)
+        data = await resp.json()
+        if (!resp.ok) throw new Error(data?.error || `HTTP ${resp.status}`)
+      } catch (e) {
+        pollLog.value.push(`[${elapsed}s] 查询失败，8s 后重试`)
+        await new Promise(r => setTimeout(r, 8000))
+        continue
+      }
+      pollLog.value.push(`[${elapsed}s] 状态：${data.status}`)
+      if (data.status === 'succeeded') {
+        const c = data.content
+        const items = Array.isArray(c) ? c : c && typeof c === 'object' ? [c] : []
+        for (const item of items) {
+          const u = typeof item?.video_url === 'string' ? item.video_url : (item?.video_url?.url || item?.url)
+          if (u && String(u).startsWith('http')) { videoUrl.value = u; break }
+        }
+        if (!videoUrl.value) throw new Error('任务成功但未找到视频 URL')
+        pollLog.value.push('✓ 视频生成完成！')
+        step.value = 3
+        break
+      }
+      if (['failed', 'expired', 'canceled', 'cancelled'].includes(data.status)) {
+        throw new Error(`任务${data.status}：${JSON.stringify(data.error || '')}`)
+      }
+      await new Promise(r => setTimeout(r, 8000))
+    }
+  } catch (e) {
+    errorMsg.value = e.message
+  } finally {
+    busy.value = ''
+  }
+}
+
 function resetAll() {
   step.value = 1
   motion.value = null
@@ -292,16 +383,109 @@ function resetAll() {
 
 <template>
   <div class="space-y-6">
+    <!-- 模式切换 -->
+    <div class="flex gap-1 bg-gray-800/60 rounded-lg p-1 w-fit">
+      <button @click="mode = 'analyze'"
+        class="px-4 py-1.5 text-xs rounded-md transition"
+        :class="mode === 'analyze' ? 'bg-cyan-600 text-white' : 'text-gray-400 hover:text-gray-200'">
+        📤 上传视频拆动作
+      </button>
+      <button @click="mode = 'template'"
+        class="px-4 py-1.5 text-xs rounded-md transition"
+        :class="mode === 'template' ? 'bg-amber-600 text-white' : 'text-gray-400 hover:text-gray-200'">
+        ⚡ 热门舞蹈模板（最省钱）
+      </button>
+    </div>
+
     <div class="bg-gradient-to-r from-cyan-950/40 to-blue-950/30 border border-cyan-800/50 rounded-xl p-4 text-xs text-cyan-200/80 leading-relaxed">
-      💡 <b>动作脚本直出</b>：把原视频交给视觉模型拆解成"按秒动作时间轴"，再把这份纯文字脚本喂给 Seedance 图生视频。<b>全程不把原视频/真人画面发给生成模型</b>，过审率远高于直接喂参考视频。动作精度约 70–80%（神似），要 100% 复刻请用"火柴人复刻"页签。
+      <template v-if="mode === 'analyze'">
+        💡 <b>动作脚本直出</b>：把原视频交给视觉模型拆解成"按秒动作时间轴"，再把这份纯文字脚本喂给 Seedance 图生视频。<b>全程不把原视频/真人画面发给生成模型</b>，过审率远高于直接喂参考视频。动作精度约 70–80%（神似），要 100% 复刻请用"火柴人复刻"页签。
+      </template>
+      <template v-else>
+        ⚡ <b>热门舞蹈模板</b>：Seedance 训练数据里有大量巴提巴提、科目三这类爆火舞蹈，直接选模板 + 写人物/场景，纯文生视频，<b>5 秒成本约 ¥2.5</b>（用 mini 模型），是目前最便宜的卡点舞方案。
+      </template>
     </div>
 
     <div v-if="errorMsg" class="bg-red-950/50 border border-red-800 rounded-xl p-4 text-sm text-red-300 whitespace-pre-line">
       ⚠ {{ errorMsg }}
     </div>
 
+    <!-- ===== 热门舞蹈模板模式 ===== -->
+    <div v-if="mode === 'template' && !videoUrl" class="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-4">
+      <div>
+        <label class="text-xs text-gray-500 block mb-2">① 选舞蹈模板</label>
+        <div class="flex flex-wrap gap-2">
+          <button v-for="d in DANCE_TEMPLATES" :key="d.name" @click="selectedDance = d.name"
+            class="px-3 py-1.5 text-xs rounded-lg border transition"
+            :class="selectedDance === d.name
+              ? 'bg-amber-600 text-white border-amber-500'
+              : 'bg-gray-800 text-gray-300 border-gray-700 hover:border-amber-500'">
+            {{ d.name }}
+          </button>
+        </div>
+        <div v-if="selectedDance" class="text-[11px] text-gray-500 mt-2">
+          动作要点：{{ DANCE_TEMPLATES.find(d => d.name === selectedDance)?.desc }}
+        </div>
+      </div>
+
+      <div>
+        <label class="text-xs text-gray-500 flex items-center gap-2">② 人物描述
+          <PromptPicker v-model="personTpl" />
+        </label>
+        <textarea v-model="personTpl" rows="2" placeholder="例：两位年轻东亚女性，穿香槟色亮片裙"
+          class="w-full mt-1 bg-gray-800 rounded-lg px-3 py-2 text-sm border border-gray-700 focus:border-amber-500 focus:outline-none resize-none"></textarea>
+      </div>
+
+      <div>
+        <label class="text-xs text-gray-500 flex items-center gap-2">③ 场景
+          <PromptPicker v-model="sceneTpl" />
+        </label>
+        <input v-model="sceneTpl" placeholder="例：无边泳池边傍晚"
+          class="w-full mt-1 bg-gray-800 rounded-lg px-3 py-2 text-sm border border-gray-700 focus:border-amber-500 focus:outline-none"/>
+      </div>
+
+      <div class="grid sm:grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs text-gray-500">模型（模板模式推荐 mini 最省）</label>
+          <select v-model="genModelTpl" class="w-full mt-1 bg-gray-800 rounded-lg px-3 py-2 text-sm border border-gray-700">
+            <option value="doubao-seedance-2-0-mini-260615">Seedance 2.0 mini（≈¥2.5/5s）</option>
+            <option value="doubao-seedance-2-0-fast-260128">Seedance 2.0 fast（≈¥4/5s）</option>
+            <option value="doubao-seedance-2-5-260628">Seedance 2.5（≈¥10/5s）</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-gray-500">时长</label>
+          <select v-model.number="durationTpl" class="w-full mt-1 bg-gray-800 rounded-lg px-3 py-2 text-sm border border-gray-700">
+            <option :value="5">5 秒</option>
+            <option :value="10">10 秒</option>
+          </select>
+        </div>
+      </div>
+
+      <button @click="generateTemplate" :disabled="busy === 'generating' || !selectedDance"
+        class="w-full py-3 bg-gradient-to-r from-amber-600 to-orange-600 disabled:opacity-40 rounded-lg font-medium text-white">
+        {{ busy === 'generating' ? '生成中…' : `⚡ 生成「${selectedDance || '舞蹈模板'}」` }}
+      </button>
+
+      <div v-if="pollLog.length" class="bg-gray-800/60 rounded-lg p-3">
+        <div class="text-xs text-gray-500 mb-1">进度</div>
+        <div class="font-mono text-xs space-y-1 max-h-32 overflow-y-auto">
+          <div v-for="(log, i) in pollLog" :key="i" class="text-gray-400">{{ log }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 模板模式结果 -->
+    <div v-if="mode === 'template' && videoUrl" class="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-3">
+      <video :src="videoUrl" controls autoplay class="w-full rounded-lg"></video>
+      <div class="flex gap-3">
+        <a :href="downloadHref" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm">⬇ 下载</a>
+        <button @click="() => { videoUrl = ''; selectedDance = ''; step = 1 }" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm">🔄 再来一条</button>
+      </div>
+    </div>
+
     <!-- Step 1: 上传 -->
-    <div v-if="step === 1" class="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-4">
+    <div v-if="mode === 'analyze' && step === 1" class="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-4">
       <div class="flex items-center gap-2">
         <span class="w-6 h-6 rounded-full bg-cyan-600 text-white text-xs flex items-center justify-center font-bold">1</span>
         <span class="font-medium">上传参考视频</span>
@@ -331,7 +515,7 @@ function resetAll() {
     </div>
 
     <!-- Step 2: 脚本编辑 + 人物设定 -->
-    <div v-if="step === 2 && motion" class="space-y-6">
+    <div v-if="mode === 'analyze' && step === 2 && motion" class="space-y-6">
       <!-- 动作时间轴 -->
       <div class="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-3">
         <div class="flex items-center gap-2">
@@ -384,7 +568,7 @@ function resetAll() {
           <label class="text-xs text-gray-500 flex items-center gap-2">
             人物形象描述（留空 = 模型自设计；建议写"两位年轻东亚女性，香槟色长裙，泳池边"这类中性词）
             <PromptPicker v-model="personDesc" />
-          </label></label>
+          </label>
           <textarea v-model="personDesc" rows="2" placeholder="例：两位年轻东亚女性，一位齐肩短发穿香槟色短裙，一位长卷发穿香槟色长裙"
             class="w-full mt-1 bg-gray-800 rounded-lg px-4 py-2 text-sm border border-gray-700 focus:border-cyan-500 focus:outline-none resize-none"></textarea>
         </div>
@@ -444,7 +628,7 @@ function resetAll() {
     </div>
 
     <!-- Step 3: 结果 -->
-    <div v-if="step === 3" class="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-3">
+    <div v-if="mode === 'analyze' && step === 3" class="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-3">
       <div class="flex items-center gap-2">
         <span class="w-6 h-6 rounded-full bg-green-600 text-white text-xs flex items-center justify-center font-bold">✓</span>
         <span class="font-medium">生成结果</span>
