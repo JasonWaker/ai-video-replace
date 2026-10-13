@@ -25,8 +25,49 @@ const step = ref(1)
 const busy = ref('')
 const errorMsg = ref('')
 
-// 热门舞蹈模板库（在 dance-templates.js 里加，直接加一行就行）
+// 舞蹈模板：预置 + 后端自定义（存在 Blob，所有人共享）
 const selectedDance = ref('')
+const customDances = ref([])
+const showAddDance = ref(false)
+const newDanceName = ref('')
+const newDanceDesc = ref('')
+const savingDance = ref(false)
+
+// 合并预置 + 自定义
+const allDances = computed(() => [...DANCE_TEMPLATES, ...customDances.value])
+
+// 启动时拉取自定义舞蹈
+async function loadCustomDances() {
+  try {
+    const r = await fetch('/api/dances')
+    const d = await r.json()
+    customDances.value = d.dances || []
+  } catch {}
+}
+loadCustomDances()
+
+async function saveCustomDance() {
+  if (!newDanceName.value.trim()) return
+  savingDance.value = true
+  try {
+    const r = await fetch('/api/dances', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newDanceName.value.trim(), desc: newDanceDesc.value.trim() }),
+    })
+    const d = await r.json()
+    if (!r.ok) throw new Error(d.error || '保存失败')
+    customDances.value = d.dances
+    selectedDance.value = newDanceName.value.trim()
+    newDanceName.value = ''
+    newDanceDesc.value = ''
+    showAddDance.value = false
+  } catch (e) {
+    alert(e.message)
+  } finally {
+    savingDance.value = false
+  }
+}
 const personTpl = ref('')
 const sceneTpl = ref('')
 const durationTpl = ref(5)
@@ -293,7 +334,7 @@ async function generateTemplate() {
   videoUrl.value = ''
   errorMsg.value = ''
   try {
-    const dance = DANCE_TEMPLATES.find(d => d.name === selectedDance.value)
+    const dance = allDances.value.find(d => d.name === selectedDance.value)
     const text = [
       `生成一段 ${durationTpl.value} 秒的写实风格短视频，竖屏 9:16，固定机位中全景，镜头稳定，灯光与背景全程一致。`,
       personTpl.value.trim()
@@ -401,18 +442,34 @@ function resetAll() {
     <!-- ===== 热门舞蹈模板模式 ===== -->
     <div v-if="mode === 'template' && !videoUrl" class="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-4">
       <div>
-        <label class="text-xs text-gray-500 block mb-2">① 选舞蹈模板</label>
+        <label class="text-xs text-gray-500 block mb-2">① 选舞蹈模板
+          <button @click="showAddDance = !showAddDance" class="ml-2 text-amber-400 hover:text-amber-300">
+            + 新增舞蹈
+          </button>
+        </label>
+        <!-- 新增舞蹈表单 -->
+        <div v-if="showAddDance" class="mb-3 p-3 bg-gray-800/60 rounded-lg space-y-2">
+          <input v-model="newDanceName" placeholder="舞蹈名，如：科目三"
+            class="w-full bg-gray-900 rounded px-2 py-1.5 text-xs border border-gray-700 focus:border-amber-500 focus:outline-none"/>
+          <input v-model="newDanceDesc" placeholder="动作要点（可选），如：双手甩动，脚步左右横移"
+            class="w-full bg-gray-900 rounded px-2 py-1.5 text-xs border border-gray-700 focus:border-amber-500 focus:outline-none"/>
+          <button @click="saveCustomDance" :disabled="savingDance || !newDanceName.trim()"
+            class="px-3 py-1 bg-amber-600 disabled:opacity-40 rounded text-xs text-white">
+            {{ savingDance ? '保存中…' : '入库' }}
+          </button>
+        </div>
         <div class="flex flex-wrap gap-2">
-          <button v-for="d in DANCE_TEMPLATES" :key="d.name" @click="selectedDance = d.name"
+          <button v-for="d in allDances" :key="d.name" @click="selectedDance = d.name"
             class="px-3 py-1.5 text-xs rounded-lg border transition"
-            :class="selectedDance === d.name
+            :class="[selectedDance === d.name
               ? 'bg-amber-600 text-white border-amber-500'
-              : 'bg-gray-800 text-gray-300 border-gray-700 hover:border-amber-500'">
-            {{ d.name }}
+              : 'bg-gray-800 text-gray-300 border-gray-700 hover:border-amber-500',
+              customDances.find(c => c.name === d.name) ? 'border-dashed border-amber-700' : '']">
+            {{ d.name }}{{ customDances.find(c => c.name === d.name) ? ' ⭐' : '' }}
           </button>
         </div>
         <div v-if="selectedDance" class="text-[11px] text-gray-500 mt-2">
-          动作要点：{{ DANCE_TEMPLATES.find(d => d.name === selectedDance)?.desc }}
+          动作要点：{{ allDances.find(d => d.name === selectedDance)?.desc }}
         </div>
       </div>
 
