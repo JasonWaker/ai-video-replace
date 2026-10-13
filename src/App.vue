@@ -123,6 +123,21 @@ function onVideoMeta() {
   videoW.value = v.videoWidth || 0
   videoH.value = v.videoHeight || 0
   duration.value = maxDuration.value
+  // 自动开始分析（火柴人页签）
+  if (tab.value === 'stickman' && step.value === 1 && videoFile.value) {
+    setTimeout(startAnalyze, 300)
+  }
+}
+
+function clearVideo() {
+  videoFile.value = null
+  if (videoObjUrl.value) URL.revokeObjectURL(videoObjUrl.value)
+  videoObjUrl.value = ''
+  frames.value = []
+  audioInfo.value = { hasAudio: false, bpm: 0 }
+  analysis.value = null
+  clearStickman()
+  step.value = 1
 }
 
 function seekTo(video, t) {
@@ -381,55 +396,47 @@ function restart() {
       </div>
     </header>
 
-    <main v-if="tab === 'stickman'" class="max-w-4xl mx-auto px-6 py-8 space-y-6">
+    <main class="max-w-4xl mx-auto px-6 py-8 space-y-6">
+      <!-- 公共视频上传区（所有 tab 共用，切 tab 不丢） -->
+      <div class="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="font-medium text-sm">📤 参考视频</span>
+          <button v-if="videoFile" @click="clearVideo" class="text-xs text-gray-500 hover:text-red-400">✕ 移除</button>
+        </div>
+        <label v-if="!videoFile" class="block border-2 border-dashed border-gray-700 hover:border-indigo-500 rounded-xl p-6 text-center cursor-pointer transition">
+          <input type="file" accept="video/*" class="hidden" @change="onVideoChange" />
+          <div class="text-gray-500 text-sm">点击选择视频（三个页签共用）</div>
+        </label>
+        <div v-else class="space-y-2">
+          <video id="refVideo" :src="videoObjUrl" controls @loadedmetadata="onVideoMeta"
+            class="w-full max-h-64 rounded-lg bg-black"></video>
+          <div class="flex flex-wrap gap-3 text-xs text-gray-500">
+            <span>✓ {{ videoFile.name }}</span>
+            <span v-if="videoDuration">{{ videoDuration.toFixed(1) }}s</span>
+            <span v-if="videoW">{{ videoW }}×{{ videoH }}</span>
+            <span v-if="audioInfo.hasAudio">BGM ✓<template v-if="audioInfo.bpm"> · {{ audioInfo.bpm }}BPM</template></span>
+          </div>
+        </div>
+      </div>
+
       <!-- 错误 -->
       <div v-if="errorMsg" class="bg-red-950/50 border border-red-800 rounded-xl p-4 text-sm text-red-300 whitespace-pre-line">
         ⚠ {{ errorMsg }}
       </div>
 
-      <!-- ===== 步骤 1：上传参考视频 ===== -->
-      <div v-if="step === 1" class="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-4">
+      <!-- ===== 火柴人复刻 ===== -->
+      <template v-if="tab === 'stickman'">
+      <!-- 步骤 1：自动分析（上传完自动跑，不再需要手动点） -->
+      <div v-if="step === 1" class="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-3">
         <div class="flex items-center gap-2">
           <span class="w-6 h-6 rounded-full bg-indigo-600 text-white text-xs flex items-center justify-center font-bold">1</span>
-          <span class="font-medium">上传参考视频</span>
-          <span class="text-xs text-gray-500">卡点舞、舞蹈片段等；将保留其动作节奏，替换人物与场景</span>
+          <span class="font-medium">视频分析 + 火柴人提取</span>
+          <span class="text-xs text-gray-500">上传后自动开始</span>
         </div>
-
-        <label class="block border-2 border-dashed border-gray-700 hover:border-indigo-500 rounded-xl p-8 text-center cursor-pointer transition">
-          <input type="file" accept="video/*" class="hidden" @change="onVideoChange" />
-          <div v-if="!videoFile" class="text-gray-500">
-            <div class="text-3xl mb-2">📤</div>
-            <div class="text-sm">点击选择或拖拽视频文件</div>
-            <div class="text-xs text-gray-600 mt-1">建议 5–15 秒；分析将取前 {{ maxDuration }} 秒生成</div>
-          </div>
-          <div v-else class="text-sm text-gray-400">
-            ✓ {{ videoFile.name }}（{{ (videoFile.size / 1024 / 1024).toFixed(1) }} MB）
-          </div>
-        </label>
-
-        <div v-if="videoObjUrl" class="space-y-3">
-          <video
-            id="refVideo" :src="videoObjUrl" controls
-            @loadedmetadata="onVideoMeta"
-            class="w-full max-h-80 rounded-lg bg-black"
-          ></video>
-
-          <!-- 抽帧缩略图 -->
-          <div v-if="frames.length" class="grid grid-cols-6 gap-1.5">
-            <img v-for="(f, i) in frames" :key="i" :src="f" class="rounded border border-gray-800 aspect-video object-cover" />
-          </div>
-
-          <div class="flex flex-wrap gap-3 text-xs text-gray-500">
-            <span v-if="videoDuration">时长 {{ videoDuration.toFixed(1) }}s</span>
-            <span v-if="videoW">{{ videoW }}×{{ videoH }}</span>
-            <span v-if="audioInfo.hasAudio">音频 ✓<template v-if="audioInfo.bpm"> · 约 {{ audioInfo.bpm }} BPM</template></span>
-          </div>
-
-          <button
-            @click="startAnalyze" :disabled="!canAnalyze"
-            class="w-full py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg font-medium text-white transition"
-          >{{ busy === 'analyzing' ? '分析要素 + 提取动作骨架中…（约30-90秒）' : '🔍 分析视频要素' }}</button>
+        <div v-if="busy === 'analyzing'" class="text-sm text-indigo-300 py-4 text-center">
+          🔍 正在分析要素 + 提取动作骨架…（约30-90秒）
         </div>
+        <div v-else-if="!videoFile" class="text-sm text-gray-500 py-4 text-center">请先上传参考视频</div>
       </div>
 
       <!-- ===== 步骤 2：分析结果 + 提示词微调 ===== -->
@@ -587,16 +594,28 @@ function restart() {
           <span class="text-xs text-gray-500">保留原 BGM：下载后用剪映将原音轨贴回即可</span>
         </div>
       </div>
-    </main>
+      </template>
 
-    <!-- 动作脚本直出页签 -->
-    <main v-else-if="tab === 'script'" class="max-w-4xl mx-auto px-6 py-8">
-      <MotionScript />
-    </main>
+      <!-- 动作脚本直出页签 -->
+      <template v-else-if="tab === 'script'">
+        <MotionScript
+          :video-file="videoFile"
+          :video-duration="videoDuration"
+          :video-w="videoW"
+          :video-h="videoH"
+          :audio-info="audioInfo"
+        />
+      </template>
 
-    <!-- FFmpeg 卡点图文页签 -->
-    <main v-else class="max-w-4xl mx-auto px-6 py-8">
-      <FfmpegBeat />
+      <!-- FFmpeg 卡点图文页签 -->
+      <template v-else>
+        <FfmpegBeat
+          :video-file="videoFile"
+          :video-duration="videoDuration"
+          :video-w="videoW"
+          :video-h="videoH"
+        />
+      </template>
     </main>
 
     <!-- 人物图放大查看（已下线人物图功能，保留结构占位） -->

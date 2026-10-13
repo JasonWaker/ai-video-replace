@@ -1,18 +1,21 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import PromptPicker from './PromptPicker.vue'
 
+// 接收 App.vue 共享的视频
+const props = defineProps({
+  videoFile: { type: Object, default: null },
+  videoDuration: { type: Number, default: 0 },
+  videoW: { type: Number, default: 0 },
+  videoH: { type: Number, default: 0 },
+})
+
 // ====== 状态 ======
-const step = ref(1) // 1 上传+参数 | 2 生图+合成 | 3 结果
+const step = ref(1) // 1 参数 | 2 生图+合成 | 3 结果
 const busy = ref('')
 const errorMsg = ref('')
 
-// 视频（用来抽 BGM 和鼓点）
-const videoFile = ref(null)
-const videoObjUrl = ref('')
-const videoDuration = ref(0)
-const videoW = ref(0)
-const videoH = ref(0)
+// 鼓点
 const beats = ref([]) // 鼓点时间戳秒
 const bpmEst = ref(0)
 
@@ -32,8 +35,15 @@ const outputUrl = ref('')
 const outputExt = ref('mp4')
 const synthProgress = ref(0)
 
-const isVertical = computed(() => videoH.value >= videoW.value)
-const canGenImages = computed(() => !!videoFile.value && !!personPrompt.value.trim() && !busy.value)
+const isVertical = computed(() => props.videoH >= props.videoW)
+const canGenImages = computed(() => !!props.videoFile && !!personPrompt.value.trim() && !busy.value)
+
+// watch 共享视频，自动检测鼓点
+watch(() => props.videoFile, async (file) => {
+  if (file && step.value === 1) {
+    await detectBeats(file)
+  }
+})
 
 // ====== 工具 ======
 async function postJSON(path, body) {
@@ -47,60 +57,50 @@ async function postJSON(path, body) {
   return data
 }
 
-function onVideoChange(e) {
-  const file = e.target.files?.[0]
-  if (!file) return
-  resetAll()
-  videoFile.value = file
-  if (videoObjUrl.value) URL.revokeObjectURL(videoObjUrl.value)
-  videoObjUrl.value = URL.createObjectURL(file)
-}
-
-function onVideoMeta() {
-  const v = document.getElementById('ffVideo')
-  videoDuration.value = v.duration || 0
-  videoW.value = v.videoWidth || 0
-  videoH.value = v.videoHeight || 0
-}
-
 // 从视频文件解码 AudioBuffer（用于鼓点检测 + 后续合成）
-async function decodeAudio() {
+async function decodeAudio(file) {
   const AC = window.AudioContext || window.webkitAudioContext
   const ctx = new AC()
-  const buf = await ctx.decodeAudioData(await videoFile.value.arrayBuffer())
+  const buf = await ctx.decodeAudioData(await file.arrayBuffer())
   ctx.close()
   return buf
 }
 
-// 能量峰值鼓点检测：输出 [t1, t2, ...]（秒）
-function detectBeats(audioBuf) {
-  const data = audioBuf.getChannelData(0)
-  const hop = 512
-  const env = []
-  for (let i = 0; i + hop < data.length; i += hop) {
-    let s = 0
-    for (let j = 0; j < hop; j++) s += data[i + j] * data[i + j]
-    env.push(Math.sqrt(s / hop))
-  }
-  const mean = env.reduce((a, b) => a + b, 0) / env.length
-  const thr = mean * 1.4
-  const peaks = []
-  const minGapIdx = Math.round(0.25 * (audioBuf.sampleRate / hop))
-  for (let i = 1; i < env.length - 1; i++) {
-    if (env[i] > thr && env[i] >= env[i - 1] && env[i] >= env[i + 1]) {
-      if (!peaks.length || i - peaks[peaks.length - 1] >= minGapIdx) peaks.push(i)
+// 自动检测鼓点（watch videoFile 时调用）
+async function detectBeats(file) {
+  busy.value = 'detecting'
+  try {
+    const audioBuf = await decodeAudio(file)
+    const data = audioBuf.getChannelData(0)
+    const hop = 512
+    const env = []
+    for (let i = 0; i + hop < data.length; i += hop) {
+      let s = 0
+      for (let j = 0; j < hop; j++) s += data[i + j] * data[i + j]
+      env.push(Math.sqrt(s / hop))
     }
+    const mean = env.reduce((a, b) => a + b, 0) / env.length
+    const thr = mean * 1.4
+    const peaks = []
+    const minGapIdx = Math.round(0.25 * (audioBuf.sampleRate / hop))
+    for (let i = 1; i < env.length - 1; i++) {
+      if (env[i] > thr && env[i] >= env[i - 1] && env[i] >= env[i + 1]) {
+        if (!peaks.length || i - peaks[peaks.length - 1] >= minGapIdx) peaks.push(i)
+      }
+    }
+    beats.value = peaks.map(p => (p * hop) / audioBuf.sampleRate)
+    if (beats.value.length >= 4) {
+      const gaps = []
+      for (let i = 1; i < beats.value.length; i++) gaps.push(beats.value[i] - beats.value[i - 1])
+      gaps.sort((a, b) => a - b)
+      const med = gaps[Math.floor(gaps.length / 2)]
+      bpmEst.value = Math.round(60 / med)
+    }
+  } catch (e) {
+    errorMsg.value = '鼓点检测失败：' + e.message
+  } finally {
+    busy.value = ''
   }
-  const times = peaks.map(p => (p * hop) / audioBuf.sampleRate)
-  // BPM 估算
-  if (times.length >= 4) {
-    const gaps = times.slice(1).map((t, i) => t - times[i]).sort((a, b) => a - b)
-    const med = gaps[Math.floor(gaps.length / 2)]
-    let bpm = Math.round(60 / med)
-    while (bpm > 180) bpm = Math.round(bpm / 2)
-    bpmEst.value = bpm
-  }
-  return times
 }
 
 // 8 个姿势变体（按顺序轮换）
@@ -123,12 +123,10 @@ async function generateImages() {
   images.value = []
   imagesReady.value = false
   try {
-    // 1) 解码音频 + 鼓点
-    const audioBuf = await decodeAudio()
-    beats.value = detectBeats(audioBuf)
-    // 鼓点不足则用等间隔补
+    // 鼓点已经在 watch videoFile 时检测过了；不足则用等间隔补
     if (beats.value.length < shotCount.value) {
-      const step = videoDuration.value / shotCount.value
+      const dur = props.videoDuration || 10
+      const step = dur / shotCount.value
       beats.value = Array.from({ length: shotCount.value }, (_, i) => +(i * step).toFixed(2))
     }
     beats.value = beats.value.slice(0, shotCount.value)
@@ -310,19 +308,20 @@ function resetAll() {
       ⚠ {{ errorMsg }}
     </div>
 
-    <!-- Step 1: 上传 + 参数 -->
+    <!-- Step 1: 参数（用顶部共享的视频自动检测鼓点） -->
     <div v-if="step === 1" class="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-4">
       <div class="flex items-center gap-2">
         <span class="w-6 h-6 rounded-full bg-orange-600 text-white text-xs flex items-center justify-center font-bold">1</span>
-        <span class="font-medium">上传参考视频（用来抽 BGM 和鼓点）</span>
+        <span class="font-medium">参数设置</span>
+        <span class="text-xs text-gray-500">鼓点自动从顶部共享视频检测</span>
       </div>
-      <label class="block border-2 border-dashed border-gray-700 hover:border-orange-500 rounded-xl p-6 text-center cursor-pointer transition">
-        <input type="file" accept="video/*" class="hidden" @change="onVideoChange"/>
-        <div v-if="!videoFile" class="text-gray-500 text-sm">点击选择带音乐的卡点视频</div>
-        <div v-else class="text-sm text-gray-400">✓ {{ videoFile.name }}</div>
-      </label>
-      <video v-if="videoObjUrl" :src="videoObjUrl" id="ffVideo" controls @loadedmetadata="onVideoMeta"
-        class="w-full max-h-64 rounded-lg bg-black"></video>
+      <div v-if="!props.videoFile" class="text-sm text-gray-500 py-2 text-center">
+        请先在上方公共区上传带音乐的视频
+      </div>
+      <div v-else class="text-xs text-orange-300">
+        ✓ 已检测 {{ beats.length }} 个鼓点<template v-if="bpmEst"> · 约 {{ bpmEst }} BPM</template>
+        <span v-if="busy === 'detecting'">，检测中…</span>
+      </div>
 
       <div class="grid sm:grid-cols-2 gap-3 pt-2">
         <div>

@@ -1,6 +1,15 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import PromptPicker from './PromptPicker.vue'
+
+// 接收 App.vue 共享的视频（切 tab 不丢）
+const props = defineProps({
+  videoFile: { type: Object, default: null },
+  videoDuration: { type: Number, default: 0 },
+  videoW: { type: Number, default: 0 },
+  videoH: { type: Number, default: 0 },
+  audioInfo: { type: Object, default: () => ({ hasAudio: false, bpm: 0 }) },
+})
 
 // ====== 模型配置（与 App.vue 保持一致） ======
 const GEN_MODELS = [
@@ -31,14 +40,8 @@ const sceneTpl = ref('')
 const durationTpl = ref(5)
 const genModelTpl = ref('doubao-seedance-2-0-mini-260615') // 模板模式默认最省钱
 
-// 视频
-const videoFile = ref(null)
-const videoObjUrl = ref('')
-const videoDuration = ref(0)
-const videoW = ref(0)
-const videoH = ref(0)
+// 抽帧（本地，从共享视频元素抽）
 const frames = ref([])
-const audioInfo = ref({ hasAudio: false, bpm: 0 })
 
 // 动作脚本
 const motion = ref(null) // { scene, camera, timeline: [], narrative }
@@ -149,33 +152,24 @@ async function analyzeAudioBpm(file) {
 }
 
 // ====== 事件 ======
-function onVideoChange(e) {
-  const file = e.target.files?.[0]
-  if (!file) return
-  resetAll()
-  videoFile.value = file
-  if (videoObjUrl.value) URL.revokeObjectURL(videoObjUrl.value)
-  videoObjUrl.value = URL.createObjectURL(file)
-}
-
-function onVideoMeta() {
-  const v = document.getElementById('scriptVideo')
-  videoDuration.value = v.duration || 0
-  videoW.value = v.videoWidth || 0
-  videoH.value = v.videoHeight || 0
-  duration.value = maxDuration.value
-}
+// watch 共享视频，有视频自动开始拆解动作（切 tab 回来也不丢）
+watch(() => props.videoFile, (file) => {
+  if (file && mode.value === 'analyze' && step.value === 1) {
+    setTimeout(startAnalyze, 500)
+  }
+})
 
 async function startAnalyze() {
+  if (!props.videoFile || busy.value) return
   busy.value = 'analyzing'
   errorMsg.value = ''
   try {
-    const v = document.getElementById('scriptVideo')
-    if (!frames.value.length) frames.value = await extractFrames(v, 8)
-    audioInfo.value = await analyzeAudioBpm(videoFile.value)
+    // 从 App.vue 公共视频元素抽帧
+    const v = document.getElementById('refVideo')
+    if (v && !frames.value.length) frames.value = await extractFrames(v, 8)
     const data = await postJSON('/api/analyze-motion', {
       frames: frames.value,
-      duration: Math.round(videoDuration.value) || 10,
+      duration: Math.round(props.videoDuration) || 10,
     })
     motion.value = data.analysis
     sceneInput.value = data.analysis.scene || ''
@@ -484,34 +478,20 @@ function resetAll() {
       </div>
     </div>
 
-    <!-- Step 1: 上传 -->
-    <div v-if="mode === 'analyze' && step === 1" class="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-4">
-      <div class="flex items-center gap-2">
+    <!-- Step 1: 自动拆解（用顶部公共上传的视频） -->
+    <div v-if="mode === 'analyze' && step === 1" class="bg-gray-900 rounded-xl p-5 border border-gray-800">
+      <div class="flex items-center gap-2 mb-2">
         <span class="w-6 h-6 rounded-full bg-cyan-600 text-white text-xs flex items-center justify-center font-bold">1</span>
-        <span class="font-medium">上传参考视频</span>
-        <span class="text-xs text-gray-500">只需拆动作，不会把原视频发给生成模型</span>
+        <span class="font-medium">动作脚本拆解</span>
+        <span class="text-xs text-gray-500">自动从顶部共享视频拆解</span>
       </div>
-      <label class="block border-2 border-dashed border-gray-700 hover:border-cyan-500 rounded-xl p-8 text-center cursor-pointer transition">
-        <input type="file" accept="video/*" class="hidden" @change="onVideoChange" />
-        <div v-if="!videoFile" class="text-gray-500">
-          <div class="text-3xl mb-2">📤</div>
-          <div class="text-sm">点击选择视频</div>
-          <div class="text-xs text-gray-600 mt-1">建议 5–15 秒卡点舞</div>
-        </div>
-        <div v-else class="text-sm text-gray-400">✓ {{ videoFile.name }}</div>
-      </label>
-      <div v-if="videoObjUrl" class="space-y-3">
-        <video id="scriptVideo" :src="videoObjUrl" controls @loadedmetadata="onVideoMeta"
-          class="w-full max-h-80 rounded-lg bg-black"></video>
-        <div class="flex flex-wrap gap-3 text-xs text-gray-500">
-          <span v-if="videoDuration">时长 {{ videoDuration.toFixed(1) }}s</span>
-          <span v-if="videoW">{{ videoW }}×{{ videoH }}</span>
-        </div>
-        <button @click="startAnalyze" :disabled="!!busy"
-          class="w-full py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-40 rounded-lg font-medium text-white transition">
-          {{ busy === 'analyzing' ? '拆解动作脚本中…（约10-20秒）' : '🔍 拆解动作脚本' }}
-        </button>
+      <div v-if="!props.videoFile" class="text-sm text-gray-500 py-4 text-center">
+        请先在上方公共区上传参考视频
       </div>
+      <div v-else-if="busy === 'analyzing'" class="text-sm text-cyan-300 py-4 text-center">
+        🔍 正在拆解动作脚本…（约10-20秒）
+      </div>
+      <div v-else class="text-sm text-gray-500 py-4 text-center">准备就绪</div>
     </div>
 
     <!-- Step 2: 脚本编辑 + 人物设定 -->
